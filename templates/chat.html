@@ -146,21 +146,42 @@
                 );
                 scrollToBottom();
 
-                $.ajax({
-                    data: { msg: rawText },
-                    type: "POST",
-                    url: "/get"
-                }).done(function(data) {
-                    $(".typing").remove();
-                    $("#messageFormeight").append(
-                        '<div class="msg bot-msg"><div class="bubble">' + renderAssistantMessage(data) + '</div><span class="msg-time">' + str_time + '</span></div>'
-                    );
-                    scrollToBottom();
-                }).fail(function() {
-                    $(".typing").remove();
-                    $("#messageFormeight").append(
-                        '<div class="msg bot-msg"><div class="bubble error">Sorry, something went wrong. Please try again.</div></div>'
-                    );
+                // Replace the typing indicator with a live streaming bubble
+                $(".typing").remove();
+                const bubble = $('<div class="msg bot-msg"><div class="bubble"></div><span class="msg-time">' + str_time + '</span></div>');
+                $("#messageFormeight").append(bubble);
+                const bubbleContent = bubble.find(".bubble");
+                let streamedText = "";
+
+                // Use fetch + ReadableStream — the reliable way to stream in all browsers
+                fetch("/get", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                    body: "msg=" + encodeURIComponent(rawText)
+                }).then(function(response) {
+                    if (!response.ok || !response.body) {
+                        throw new Error("Bad response");
+                    }
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    return new Promise(function(resolve, reject) {
+                        function readChunk() {
+                            reader.read().then(function(result) {
+                                if (result.done) {
+                                    resolve();
+                                    return;
+                                }
+                                // Decode the bytes and append to what we have
+                                streamedText += decoder.decode(result.value, { stream: true });
+                                bubbleContent.html(renderAssistantMessage(streamedText));
+                                scrollToBottom();
+                                readChunk();
+                            }).catch(reject);
+                        }
+                        readChunk();
+                    });
+                }).catch(function() {
+                    bubbleContent.html('<span class="error">Sorry, something went wrong. Please try again.</span>');
                     scrollToBottom();
                 });
             });

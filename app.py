@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, session
+from flask import Flask, render_template, request, session, Response, stream_with_context
 
 from src.helper import get_embeddings
 
@@ -52,7 +52,8 @@ model = ChatOpenAI(
     api_key=os.getenv("COMPANY_API_KEY"),
     base_url=os.getenv("COMPANY_BASE_URL"),
     temperature=0.7,
-    max_tokens=100
+    max_tokens=100,
+    streaming=True
 )
 
 
@@ -145,10 +146,14 @@ def format_context(docs):
     return "\n\n".join(doc.page_content for doc in docs)
 
 
-def clean_response(response):
-    """Remove tool-call XML blocks that sometimes leak into the response."""
+def clean_chunk(chunk):
+    """Light cleaning for streaming chunks.
+
+    No .strip() here — chunks often start with a space that separates
+    words, and stripping it would merge words together.
+    """
     # Remove <function_calls>...</function_calls> blocks (Anthropic tool-use format)
-    cleaned = re.sub(r"<function_calls>.*?</function_calls>", "", response, flags=re.DOTALL)
+    cleaned = re.sub(r"<function_calls>.*?</function_calls>", "", chunk, flags=re.DOTALL)
     # Remove any leftover <invoke>...</invoke> blocks
     cleaned = re.sub(r"<invoke>.*?</invoke>", "", cleaned, flags=re.DOTALL)
     # Remove any leftover <parameter ...>...</parameter> blocks
@@ -162,6 +167,12 @@ def clean_response(response):
         .replace("\\r", "\n")
         .replace("\\n", "\n")
     )
+    return cleaned
+
+
+def clean_response(response):
+    """Full cleaning for a complete response (used when saving to the DB)."""
+    cleaned = clean_chunk(response)
     # Collapse extra blank lines
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
     return cleaned
@@ -203,25 +214,34 @@ def chat():
 
     print("Question:", msg)
 
-    # Call the RAG chain with the question AND the conversation history
-    response = chain.invoke({"input": msg, "history": history_text})
-
-    # Remove tool-call XML that sometimes leaks into the response
-    response = clean_response(response)
-
-    # Fallback if the model only returned a tool call
-    if not response:
-        response = "I'm sorry, I couldn't generate a response. Could you rephrase your question?"
-
-    print("Response:", response)
-
-    # Save this exchange so the next question has context
+    # Save the user's message right away so it's not lost if streaming fails
     save_message(session_id, "user", msg)
-    save_message(session_id, "assistant", response)
 
-    # Keep the DB small: drop anything older than the last 12 messages
-    trim_history(session_id)
+    def generate():
+        """Yield cleaned text chunks as the model streams them."""
+        full_response = []
+        try:
+            for chunk in chain.stream({"input": msg, "history": history_text}):
+                piece = clean_chunk(chunk)
+                if piece:
+                    full_response.append(piece)
+                    yield piece
+        except Exception as error:
+            print("Stream error:", error)
+            yield "\n\nI'm sorry, something went wrong while generating a response. Please try again."
 
+        # Save the assistant's full response once streaming finishes
+        response = clean_response("".join(full_response))
+        if not response:
+            response = "I'm sorry, I couldn't generate a response. Could you rephrase your question?"
+        save_message(session_id, "assistant", response)
+        trim_history(session_id)
+        print("Response:", response)
+
+    response = Response(stream_with_context(generate()), mimetype="text/plain")
+    # Tell proxies/browsers not to buffer the stream
+    response.headers["X-Accel-Buffering"] = "no"
+    response.headers["Cache-Control"] = "no-cache"
     return response
 
 
