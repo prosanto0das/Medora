@@ -59,8 +59,11 @@
 
         function renderAssistantMessage(response) {
             const normalizedResponse = response
+                .replace(/\\r\\n/g, "\n")
+                .replace(/\\r/g, "\n")
                 .replace(/\\n/g, "\n")
                 .replace(/\r\n/g, "\n")
+                .replace(/\r/g, "\n")
                 .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
                 .replace(/\s+[-]{3,}\s+/g, "\n\n")
                 .replace(/\s+-\s+(?=(?:\*\*|[A-Z]))/g, "\n- ");
