@@ -149,19 +149,45 @@ border-radius: 0 0 15px 15px !important;
 	margin-top: auto;
 	margin-bottom: auto;
 	margin-left: 10px;
-	border-radius: 25px;
+	border-radius: 18px 18px 18px 4px;
 	background-color: rgb(82, 172, 255);
-	padding: 10px;
+	padding: 14px 16px;
+	max-width: 82%;
+	color: #10243a;
+	line-height: 1.5;
 	position: relative;
 }
 .msg_cotainer_send{
 	margin-top: auto;
 	margin-bottom: auto;
 	margin-right: 10px;
-	border-radius: 25px;
+	border-radius: 18px 18px 4px 18px;
 	background-color: #58cc71;
-	padding: 10px;
+	padding: 14px 16px;
+	max-width: 82%;
+	line-height: 1.5;
 	position: relative;
+}
+.msg_cotainer p{
+	margin: 0 0 0.75rem;
+}
+.msg_cotainer p:last-child{
+	margin-bottom: 0;
+}
+.msg_cotainer ul,
+.msg_cotainer ol{
+	margin: 0.4rem 0 0.8rem;
+	padding-left: 1.35rem;
+}
+.msg_cotainer li{
+	margin-bottom: 0.35rem;
+}
+.msg_cotainer li:last-child{
+	margin-bottom: 0;
+}
+.msg_cotainer strong{
+	font-weight: 700;
+	color: #09243d;
 }
 .msg_time{
 	position: absolute;

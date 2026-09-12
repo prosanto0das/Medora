@@ -49,6 +49,69 @@
 		</div>
 		
 		<script>
+			function escapeHtml(value) {
+				return value.replace(/[&<>'"]/g, function(character) {
+					return {
+						"&": "&amp;",
+						"<": "&lt;",
+						">": "&gt;",
+						"'": "&#39;",
+						'"': "&quot;"
+					}[character];
+				});
+			}
+
+			function formatInlineMarkdown(value) {
+				return escapeHtml(value)
+					.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+					.replace(/__(.+?)__/g, "<strong>$1</strong>")
+					.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+			}
+
+			function renderAssistantMessage(response) {
+				const normalizedResponse = response
+					.replace(/\\n/g, "\n")
+					.replace(/\r\n/g, "\n")
+					.replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+					.replace(/\s+[-]{3,}\s+/g, "\n\n")
+					.replace(/\s+-\s+(?=(?:\*\*|[A-Z]))/g, "\n- ");
+				const lines = normalizedResponse.split("\n");
+				let html = "";
+				let listOpen = false;
+
+				function closeList() {
+					if (listOpen) {
+						html += "</ul>";
+						listOpen = false;
+					}
+				}
+
+				lines.forEach(function(line) {
+					const trimmedLine = line.trim();
+					const bullet = trimmedLine.match(/^[-*]\s+(.+)/);
+
+					if (!trimmedLine) {
+						closeList();
+						return;
+					}
+
+					if (bullet) {
+						if (!listOpen) {
+							html += "<ul>";
+							listOpen = true;
+						}
+						html += "<li>" + formatInlineMarkdown(bullet[1]) + "</li>";
+						return;
+					}
+
+					closeList();
+					html += "<p>" + formatInlineMarkdown(trimmedLine) + "</p>";
+				});
+
+				closeList();
+				return html;
+			}
+
 			$(document).ready(function() {
 				$("#messageArea").on("submit", function(event) {
 					const date = new Date();
@@ -57,7 +120,7 @@
 					const str_time = hour+":"+minute;
 					var rawText = $("#text").val();
 
-					var userHtml = '<div class="d-flex justify-content-end mb-4"><div class="msg_cotainer_send">' + rawText + '<span class="msg_time_send">'+ str_time + '</span></div><div class="img_cont_msg"><img src="https://i.ibb.co/d5b84Xw/Untitled-design.png" class="rounded-circle user_img_msg"></div></div>';
+					var userHtml = '<div class="d-flex justify-content-end mb-4"><div class="msg_cotainer_send">' + escapeHtml(rawText) + '<span class="msg_time_send">'+ str_time + '</span></div><div class="img_cont_msg"><img src="https://i.ibb.co/d5b84Xw/Untitled-design.png" class="rounded-circle user_img_msg"></div></div>';
 					
 					$("#text").val("");
 					$("#messageFormeight").append(userHtml);
@@ -69,8 +132,8 @@
 						type: "POST",
 						url: "/get",
 					}).done(function(data) {
-						var botHtml = '<div class="d-flex justify-content-start mb-4"><div class="img_cont_msg"><img src="https://cdn-icons-png.flaticon.com/512/387/387569.png" class="rounded-circle user_img_msg"></div><div class="msg_cotainer">' + data + '<span class="msg_time">' + str_time + '</span></div></div>';
-						$("#messageFormeight").append($.parseHTML(botHtml));
+						var botHtml = '<div class="d-flex justify-content-start mb-4"><div class="img_cont_msg"><img src="https://cdn-icons-png.flaticon.com/512/387/387569.png" class="rounded-circle user_img_msg"></div><div class="msg_cotainer">' + renderAssistantMessage(data) + '<span class="msg_time">' + str_time + '</span></div></div>';
+						$("#messageFormeight").append(botHtml);
 					});
 					event.preventDefault();
 				});

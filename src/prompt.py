@@ -29,6 +29,8 @@ Medical guidelines:
 
 Response style:
 - Keep the response concise.
+- Use no more than 120 words unless the user explicitly asks for detail.
+- Use at most 3 short paragraphs and 5 bullet points.
 - Use short paragraphs.
 - Use bullet points only when they improve readability.
 - Avoid excessive headings.
