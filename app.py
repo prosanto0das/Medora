@@ -14,6 +14,7 @@ from src.prompt import system_prompt
 
 import os
 import re
+import sqlite3
 import uuid
 
 
@@ -64,13 +65,70 @@ prompt = ChatPromptTemplate.from_messages(
 )
 
 
-# ---------- Conversation memory (in-memory) ----------
-# Stores the last few messages for each browser session.
-# Format: {session_id: [{"role": "user"/"assistant", "content": "..."}, ...]}
-conversations = {}
+# ---------- Conversation memory (SQLite) ----------
+# Stores the last few messages for each browser session in a file,
+# so history survives server restarts.
+DB_PATH = "chat_history.db"
 
 # Keep only the last 12 messages (6 exchanges) to save tokens
 MAX_HISTORY_MESSAGES = 12
+
+# check_same_thread=False lets Flask's threads share one connection
+_db = sqlite3.connect(DB_PATH, check_same_thread=False)
+_db.row_factory = sqlite3.Row
+_db.execute(
+    """
+    CREATE TABLE IF NOT EXISTS messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL
+    )
+    """
+)
+_db.commit()
+
+
+def get_history(session_id):
+    """Return the last MAX_HISTORY_MESSAGES messages for a session."""
+    rows = _db.execute(
+        """
+        SELECT role, content FROM messages
+        WHERE session_id = ?
+        ORDER BY id DESC
+        LIMIT ?
+        """,
+        (session_id, MAX_HISTORY_MESSAGES),
+    ).fetchall()
+    # Reverse so the oldest kept message comes first
+    return [{"role": row["role"], "content": row["content"]} for row in reversed(rows)]
+
+
+def save_message(session_id, role, content):
+    """Insert one message into the database."""
+    _db.execute(
+        "INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)",
+        (session_id, role, content),
+    )
+    _db.commit()
+
+
+def trim_history(session_id):
+    """Delete old rows so only the last MAX_HISTORY_MESSAGES stay in the DB."""
+    _db.execute(
+        """
+        DELETE FROM messages
+        WHERE session_id = ?
+          AND id NOT IN (
+              SELECT id FROM messages
+              WHERE session_id = ?
+              ORDER BY id DESC
+              LIMIT ?
+          )
+        """,
+        (session_id, session_id, MAX_HISTORY_MESSAGES),
+    )
+    _db.commit()
 
 
 def build_history_text(messages):
@@ -138,7 +196,7 @@ def chat():
     session_id = session["user_id"]
 
     # Get this user's past messages (empty list on first visit)
-    history = conversations.get(session_id, [])
+    history = get_history(session_id)
 
     # Turn the last few messages into plain text for the prompt
     history_text = build_history_text(history)
@@ -158,9 +216,11 @@ def chat():
     print("Response:", response)
 
     # Save this exchange so the next question has context
-    history.append({"role": "user", "content": msg})
-    history.append({"role": "assistant", "content": response})
-    conversations[session_id] = history[-MAX_HISTORY_MESSAGES:]
+    save_message(session_id, "user", msg)
+    save_message(session_id, "assistant", response)
+
+    # Keep the DB small: drop anything older than the last 12 messages
+    trim_history(session_id)
 
     return response
 
