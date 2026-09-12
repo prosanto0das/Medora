@@ -132,8 +132,8 @@ Medora/
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/prosanto0das/Medor.git
-cd Medor
+git clone https://github.com/prosanto0das/Medora.git
+cd Medora
 ```
 
 ### 2. Create a virtual environment
